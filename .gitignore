@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Environment variables
+.env
+.env.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data directories
+crawled_data/
+extracted_data/
+rag_data/
+pipeline/cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+#analysis and usage files
+Analysis.md
+RAG_USAGE.md
+RAG_IMPLEMENTATION_SUMMARY.md
+SECURITY_SETUP.md
+market_reservations.md
+Analysis_gemini.md
+
+

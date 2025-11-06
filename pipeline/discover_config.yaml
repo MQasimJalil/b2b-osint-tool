@@ -1,0 +1,102 @@
+engines:
+  - google
+  - bing
+  - brave
+regions:
+  - us
+  - uk
+  - de
+  - es
+  - it
+languages:
+  - en
+  - de
+  - es
+  - it
+templates:
+  intents:
+    - buy
+    - price
+    - sale
+    - clearance
+    - "in stock"
+    - catalog
+    - "new arrivals"
+    - store
+    - shop
+    - retailer
+    - distributor
+    - wholesale
+    - supplier
+  negatives:
+    - "-site:amazon.com"
+    - "-site:ebay.com"
+    - "-site:alibaba.com"
+    - "-site:etsy.com"
+    - "-site:pinterest.com"
+    - "-site:facebook.com"
+    - "-site:linkedin.com"
+    - "-job"
+    - "-career"
+    - "-pdf"
+    - "-forum"
+    - "-reddit"
+    - "-uhlsport"
+    - "-reusch"
+    - "-sells"
+    - "-\"elite sport\""
+    - "-nike"
+    - "-adidas"
+  platform_hints:
+    - "inurl:/collections"
+    - "inurl:/product"
+    - "inurl:/products"
+    - "inurl:/shop"
+    - "inurl:/wp-content/plugins/woocommerce"
+    - "site:myshopify.com"
+    - "site:bigcommerce.com"
+    - "site:bigcartel.com"
+  niche_terms:
+    - "goalkeeper gloves"
+    - "gk gloves"
+    - "goalie gloves"
+    - "goalkeeper equipment"
+    - "negative cut"
+    - "hybrid cut"
+    - "latex grip"
+  geo_tlds:
+    - ".co.uk"
+    - ".de"
+    - ".es"
+    - ".it"
+    - ".com.au"
+limits:
+  max_queries: 400
+  per_family_cap: 50
+max_serp_pages: 8
+max_results: 500
+use_headless: false
+proxy_file: null  # optional, one host:port or user:pass@host:port per line
+platform_hints: true
+soft_vetting:
+  enabled: true
+  timeout_seconds: 8
+  require_any:
+    - has_cart
+    - has_product_schema
+    - has_shop_paths
+pacing:
+  base_delay_seconds: 3.0
+  jitter_seconds: 2.0
+  backoff_multiplier: 1.5
+  max_delay_seconds: 10.0
+restarts:
+  queries_per_session: 8
+captcha:
+  manual_pause: true   # if true, pause and wait for Enter on CAPTCHA
+pool:
+  drivers: 3          # requested pool size; current implementation runs engines sequentially but config allows future parallelism
+behavior:
+  simulate_mouse_scroll: true
+  scroll_pixels: 600
+  scroll_delay_ms: 300
