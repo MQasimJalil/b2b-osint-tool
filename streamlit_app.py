@@ -14,6 +14,8 @@ import json
 import asyncio
 from pathlib import Path
 from typing import List, Dict
+import pandas as pd
+import plotly.express as px
 
 # Import pipeline modules
 from pipeline.discover import discover_domains
@@ -25,7 +27,10 @@ from pipeline.extract import (
     extract_products,
     save_company_data,
     build_global_indexes,
-    get_company_data
+    get_company_data,
+    update_vetting_decision,
+    delete_crawled_data,
+    delete_extracted_data
 )
 from pipeline.rag import (
     embed_domain,
@@ -97,7 +102,7 @@ def main():
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",
-        ["Full Pipeline", "Individual Stages", "RAG Query", "Status & Monitoring"]
+        ["Full Pipeline", "Individual Stages", "RAG Query", "Analytics & Insights", "Status & Monitoring"]
     )
     
     if page == "Full Pipeline":
@@ -106,6 +111,8 @@ def main():
         show_individual_stages()
     elif page == "RAG Query":
         show_rag_query()
+    elif page == "Analytics & Insights":
+        show_analytics_insights()
     elif page == "Status & Monitoring":
         show_status_monitoring()
 
@@ -129,7 +136,7 @@ def show_full_pipeline():
             max_parallel_domains = st.number_input("Max Parallel Domains", min_value=1, max_value=10, value=3, help="Domains to crawl simultaneously")
             auto_embed_rag = st.checkbox("Auto-embed for RAG", help="Automatically embed domains after extraction")
         
-        submitted = st.form_submit_button("🚀 Run Full Pipeline", use_container_width=True)
+        submitted = st.form_submit_button("🚀 Run Full Pipeline", width='stretch')
         
         if submitted and not st.session_state.pipeline_running:
             st.session_state.pipeline_running = True
@@ -216,17 +223,45 @@ def run_full_pipeline(industry: str, max_discovery: int, max_crawl_pages: int, d
         # Step 4: Extraction
         status_text.text("[4/5] Extracting company profiles and products...")
         progress_bar.progress(0.8)
-        
+
         extracted_count = 0
-        for domain in st.progress_bar(final_yes, desc="Extracting"):
+        skipped_count = 0
+        rejected_count = 0
+        for domain in final_yes:
+            # Check if already extracted to avoid wasting tokens
+            company_file = os.path.join("extracted_data", "companies", domain, "profile.json")
+            if os.path.exists(company_file):
+                skipped_count += 1
+                continue
+
             profile = extract_company_profile(domain, "crawled_data")
             if profile:
                 products = extract_products(domain, "crawled_data", industry=industry)
+
+                # Check if company has products
+                if len(products) == 0:
+                    update_vetting_decision(domain, "NO")
+                    delete_crawled_data(domain, output_dir="crawled_data")
+                    delete_extracted_data(domain, base_dir="extracted_data")
+                    rejected_count += 1
+                    continue
+
                 save_company_data(domain, profile, products, "extracted_data")
                 extracted_count += 1
-        
-        build_global_indexes("extracted_data")
-        st.success(f"✅ Extracted data from {extracted_count} domains")
+
+        if extracted_count > 0:
+            build_global_indexes("extracted_data")
+
+        # Show summary
+        summary_parts = []
+        if extracted_count > 0:
+            summary_parts.append(f"extracted {extracted_count} domains")
+        if skipped_count > 0:
+            summary_parts.append(f"skipped {skipped_count} already extracted")
+        if rejected_count > 0:
+            summary_parts.append(f"rejected {rejected_count} with no products")
+
+        st.success(f"✅ " + ", ".join(summary_parts).capitalize())
         
         progress_bar.progress(0.9)
         
@@ -281,7 +316,7 @@ def show_discovery_stage():
         industry = st.text_input("Industry", value="goalkeeper gloves")
         max_results = st.number_input("Max Results", min_value=1, max_value=1000, value=100)
         
-        submitted = st.form_submit_button("Run Discovery", use_container_width=True)
+        submitted = st.form_submit_button("Run Discovery", width='stretch')
         
         if submitted:
             with st.spinner("Discovering domains..."):
@@ -300,7 +335,7 @@ def show_vetting_stage():
     
     st.info(f"Found {len(discovered)} discovered domains")
     
-    if st.button("Run Vetting", use_container_width=True):
+    if st.button("Run Vetting", width='stretch'):
         with st.spinner("Vetting domains..."):
             # Rule-based
             rule_results = rule_vet(discovered)
@@ -348,7 +383,7 @@ def show_crawling_stage():
         concurrency = st.number_input("Page Concurrency", min_value=1, max_value=20, value=5)
         max_parallel_domains = st.number_input("Max Parallel Domains", min_value=1, max_value=10, value=3)
         
-        submitted = st.form_submit_button("Start Crawling", use_container_width=True)
+        submitted = st.form_submit_button("Start Crawling", width='stretch')
         
         if submitted:
             # Check status
@@ -387,26 +422,56 @@ def show_extraction_stage():
     with st.form("extraction_form"):
         industry = st.text_input("Industry Filter", value="goalkeeper gloves", help="Filter products by industry")
         
-        submitted = st.form_submit_button("Start Extraction", use_container_width=True)
+        submitted = st.form_submit_button("Start Extraction", width='stretch')
         
         if submitted:
             extracted_count = 0
             progress_bar = st.progress(0)
             status_text = st.empty()
             
+            skipped_count = 0
+            rejected_count = 0
             for i, domain in enumerate(yes_domains):
                 progress_bar.progress((i + 1) / len(yes_domains))
                 status_text.text(f"Processing {i+1}/{len(yes_domains)}: {domain}")
-                
+
+                # Check if already extracted to avoid wasting tokens
+                company_file = os.path.join("extracted_data", "companies", domain, "profile.json")
+                if os.path.exists(company_file):
+                    status_text.text(f"Skipping {domain} - already extracted")
+                    skipped_count += 1
+                    continue
+
                 with st.spinner(f"Extracting {domain}..."):
                     profile = extract_company_profile(domain, "crawled_data")
                     if profile:
                         products = extract_products(domain, "crawled_data", industry=industry)
+
+                        # Check if company has products
+                        if len(products) == 0:
+                            status_text.text(f"Rejecting {domain} - no products found")
+                            update_vetting_decision(domain, "NO")
+                            delete_crawled_data(domain, output_dir="crawled_data")
+                            delete_extracted_data(domain, base_dir="extracted_data")
+                            rejected_count += 1
+                            continue
+
                         save_company_data(domain, profile, products, "extracted_data")
                         extracted_count += 1
-            
-            build_global_indexes("extracted_data")
-            st.success(f"✅ Extracted data from {extracted_count} domains")
+
+            if extracted_count > 0:
+                build_global_indexes("extracted_data")
+
+            # Show summary
+            summary_parts = []
+            if extracted_count > 0:
+                summary_parts.append(f"extracted {extracted_count} domains")
+            if skipped_count > 0:
+                summary_parts.append(f"skipped {skipped_count} already extracted")
+            if rejected_count > 0:
+                summary_parts.append(f"rejected {rejected_count} with no products")
+
+            st.success(f"✅ " + ", ".join(summary_parts).capitalize())
 
 
 def show_rag_embedding_stage():
@@ -416,7 +481,7 @@ def show_rag_embedding_stage():
         force_reembed = st.checkbox("Force Re-embed", help="Re-embed all domains even if already embedded")
         specific_domain = st.text_input("Specific Domain (optional)", help="Leave empty to embed all domains")
         
-        submitted = st.form_submit_button("Start Embedding", use_container_width=True)
+        submitted = st.form_submit_button("Start Embedding", width='stretch')
         
         if submitted:
             if specific_domain:
@@ -481,7 +546,7 @@ def show_rag_query():
             )
             use_llm = st.checkbox("Use LLM for Answer", value=True, help="Generate intelligent answer using LLM")
     
-    if st.button("🔍 Query", use_container_width=True, type="primary"):
+    if st.button("🔍 Query", width='stretch', type="primary"):
         if not query:
             st.warning("Please enter a query")
             return
@@ -611,6 +676,191 @@ def show_status_monitoring():
                 st.info(f"{collection_name}: Not created yet")
     except Exception as e:
         st.warning(f"RAG database not available: {e}")
+
+
+def show_analytics_insights():
+    st.header("📈 Analytics & Insights")
+    st.markdown("Visualize pipeline performance and explore extracted market data.")
+    
+    # Load data
+    discovered = load_discovered_domains()
+    vetted = load_vetted_domains()
+    yes_domains = [d for d, dec in vetted.items() if dec.upper() == "YES"]
+    
+    # --- Pipeline Funnel ---
+    st.subheader("1. Pipeline Funnel")
+    
+    # Calculate funnel metrics
+    n_discovered = len(discovered)
+    n_vetted_yes = len(yes_domains)
+    
+    # Crawled count
+    crawl_status = get_crawl_status(yes_domains, "crawled_data")
+    n_crawled = len([d for d, s in crawl_status.items() if s.get("fully_crawled")])
+    
+    # Extracted count
+    extracted_dir = os.path.join("extracted_data", "companies")
+    n_extracted = 0
+    if os.path.exists(extracted_dir):
+        n_extracted = len([d for d in os.listdir(extracted_dir) if os.path.isdir(os.path.join(extracted_dir, d))])
+    
+    funnel_data = pd.DataFrame({
+        "Stage": ["Discovered", "Vetted (YES)", "Crawled", "Extracted"],
+        "Count": [n_discovered, n_vetted_yes, n_crawled, n_extracted]
+    })
+    
+    fig_funnel = px.funnel(funnel_data, x='Count', y='Stage', title="Pipeline Conversion Funnel")
+    st.plotly_chart(fig_funnel, width='stretch')
+    
+    st.markdown("---")
+    
+    # --- Product Analytics ---
+    st.subheader("2. Product Market Analytics")
+    
+    products_file = os.path.join("extracted_data", "indexes", "all_products.jsonl")
+    if not os.path.exists(products_file):
+        st.warning("No product index found. Run extraction first.")
+        return
+
+    # Load products into DataFrame
+    products = []
+    with open(products_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            try:
+                products.append(json.loads(line))
+            except:
+                continue
+    
+    if not products:
+        st.warning("No products found in index.")
+        return
+
+    df_products = pd.DataFrame(products)
+    
+    # Clean price column for analysis
+    def clean_price(p):
+        if not p: return None
+        # Remove currency symbols and commas
+        clean = ''.join(c for c in str(p) if c.isdigit() or c == '.')
+        try:
+            return float(clean)
+        except:
+            return None
+
+    df_products['price_value'] = df_products['price'].apply(clean_price)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Price Distribution
+        if 'price_value' in df_products.columns and not df_products['price_value'].isnull().all():
+            fig_price = px.histogram(
+                df_products, 
+                x="price_value", 
+                nbins=20, 
+                title="Product Price Distribution",
+                labels={"price_value": "Price"}
+            )
+            st.plotly_chart(fig_price, width='stretch')
+        else:
+            st.info("Insufficient price data for distribution chart.")
+
+    with col2:
+        # Brand Share
+        if 'brand' in df_products.columns:
+            # Get top 10 brands
+            top_brands = df_products['brand'].value_counts().head(10).reset_index()
+            top_brands.columns = ['Brand', 'Count']
+            
+            fig_brand = px.pie(
+                top_brands, 
+                values='Count', 
+                names='Brand', 
+                title="Top 10 Brands by Product Count",
+                hole=0.4
+            )
+            st.plotly_chart(fig_brand, width='stretch')
+    
+    st.markdown("---")
+    
+    # --- Data Explorer ---
+    st.subheader("3. Interactive Data Explorer")
+    
+    tab1, tab2 = st.tabs(["Products", "Companies"])
+    
+    with tab1:
+        st.markdown("### All Products")
+        
+        # Filters
+        col1, col2 = st.columns(2)
+        with col1:
+            search_term = st.text_input("Search Products", placeholder="Name, Brand, or Category...")
+        with col2:
+            if 'brand' in df_products.columns:
+                all_brands = ["All"] + sorted(df_products['brand'].dropna().unique().tolist())
+                brand_filter = st.selectbox("Filter by Brand", all_brands)
+            else:
+                brand_filter = "All"
+        
+        # Apply filters
+        df_filtered = df_products.copy()
+        
+        if search_term:
+            mask = df_filtered.astype(str).apply(lambda x: x.str.contains(search_term, case=False)).any(axis=1)
+            df_filtered = df_filtered[mask]
+            
+        if brand_filter != "All":
+            df_filtered = df_filtered[df_filtered['brand'] == brand_filter]
+            
+        st.dataframe(
+            df_filtered[['domain', 'brand', 'name', 'price', 'category', 'url']],
+            width='stretch',
+            hide_index=True
+        )
+        
+        st.download_button(
+            "Download Products CSV",
+            df_filtered.to_csv(index=False).encode('utf-8'),
+            "products_export.csv",
+            "text/csv"
+        )
+
+    with tab2:
+        st.markdown("### All Companies")
+        companies_file = os.path.join("extracted_data", "indexes", "all_companies.jsonl")
+        
+        if os.path.exists(companies_file):
+            companies = []
+            with open(companies_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        companies.append(json.loads(line))
+                    except:
+                        continue
+            
+            if companies:
+                df_companies = pd.DataFrame(companies)
+                
+                # Flatten email list for display
+                if 'email' in df_companies.columns:
+                    df_companies['email_display'] = df_companies['email'].apply(lambda x: ", ".join(x) if isinstance(x, list) else str(x))
+                
+                st.dataframe(
+                    df_companies[['domain', 'company', 'email_display', 'products_count']],
+                    width='stretch',
+                    hide_index=True
+                )
+                
+                st.download_button(
+                    "Download Companies CSV",
+                    df_companies.to_csv(index=False).encode('utf-8'),
+                    "companies_export.csv",
+                    "text/csv"
+                )
+            else:
+                st.info("No companies found in index.")
+        else:
+            st.warning("No company index found.")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,5 @@
 engines:
   - google
-  - bing
-  - brave
 regions:
   - us
   - uk
@@ -41,12 +39,6 @@ templates:
     - "-pdf"
     - "-forum"
     - "-reddit"
-    - "-uhlsport"
-    - "-reusch"
-    - "-sells"
-    - "-\"elite sport\""
-    - "-nike"
-    - "-adidas"
   platform_hints:
     - "inurl:/collections"
     - "inurl:/product"

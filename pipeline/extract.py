@@ -5,6 +5,7 @@ import asyncio
 import time
 from typing import Dict, List, Optional
 from datetime import datetime
+from pathlib import Path
 
 import openai
 from openai import AsyncOpenAI
@@ -12,8 +13,12 @@ import dotenv
 
 dotenv.load_dotenv()
 
+# Path to vetting cache
+VETTING_CACHE = Path(__file__).parent / "cache" / "local_vet_results.jsonl"
+
 # Rate limit handling
-MAX_CONCURRENT_API_CALLS = 6  # Process max 6 chunks simultaneously to avoid rate limits
+MAX_CONCURRENT_API_CALLS = 3  # Reduced concurrent calls to avoid rate limits
+REQUEST_DELAY = 0.8  # Seconds between starting each request (staggered)
 
 
 async def _retry_with_backoff(coro, max_retries: int = 5, domain: str = ""):
@@ -275,14 +280,17 @@ def extract_company_profile(domain: str, output_dir: str = "crawled_data") -> Op
         return None
     
     print(f"[{domain}] Processing {len(chunks)} chunks for company profile...")
-    
+    print(f"[{domain}] Rate limit: {MAX_CONCURRENT_API_CALLS} concurrent, {REQUEST_DELAY}s stagger")
+
     async def run_extraction():
         client = _get_async_client()
         try:
             # Use semaphore to limit concurrent API calls
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_API_CALLS)
-            
-            async def limited_extract(chunk):
+
+            async def limited_extract(chunk, index):
+                # Stagger request starts to spread load over time
+                await asyncio.sleep(index * REQUEST_DELAY)
                 async with semaphore:
                     # Wrap in retry logic
                     return await _retry_with_backoff(
@@ -290,8 +298,8 @@ def extract_company_profile(domain: str, output_dir: str = "crawled_data") -> Op
                         max_retries=5,
                         domain=domain
                     )
-            
-            tasks = [limited_extract(chunk) for chunk in chunks]
+
+            tasks = [limited_extract(chunk, i) for i, chunk in enumerate(chunks)]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Filter out exceptions and return valid results
@@ -418,20 +426,15 @@ def _merge_products(all_products: List[List[Dict]], domain: str) -> List[Dict]:
     
     # Add product IDs
     for i, p in enumerate(merged):
-        p["product_id"] = f"{domain}_p{i+1}"
-    
-    # Calculate total safely
-    total_count = sum(len(pl) for pl in all_products if pl and isinstance(pl, list))
-    print(f"[{domain}] Deduplication: {total_count} total → {len(merged)} unique products")
-    
+        p["product_id"] = f"{domain}_product_{i+1}"
+
     return merged
 
 
 def extract_products(domain: str, output_dir: str = "crawled_data", industry: str = "goalkeeper gloves") -> List[Dict]:
     """
     Extract product catalog using multi-chunk async strategy with industry filtering.
-    Processes more content for better product discovery.
-    
+
     Args:
         domain: Domain to extract products from
         output_dir: Directory containing crawled data
@@ -461,14 +464,17 @@ def extract_products(domain: str, output_dir: str = "crawled_data", industry: st
         return []
     
     print(f"[{domain}] Processing {len(chunks)} chunks for {industry} products...")
-    
+    print(f"[{domain}] Rate limit: {MAX_CONCURRENT_API_CALLS} concurrent, {REQUEST_DELAY}s stagger")
+
     async def run_extraction():
         client = _get_async_client()
         try:
             # Use semaphore to limit concurrent API calls
             semaphore = asyncio.Semaphore(MAX_CONCURRENT_API_CALLS)
-            
-            async def limited_extract(chunk):
+
+            async def limited_extract(chunk, index):
+                # Stagger request starts to spread load over time
+                await asyncio.sleep(index * REQUEST_DELAY)
                 async with semaphore:
                     # Wrap in retry logic
                     return await _retry_with_backoff(
@@ -476,8 +482,8 @@ def extract_products(domain: str, output_dir: str = "crawled_data", industry: st
                         max_retries=5,
                         domain=domain
                     )
-            
-            tasks = [limited_extract(chunk) for chunk in chunks]
+
+            tasks = [limited_extract(chunk, i) for i, chunk in enumerate(chunks)]
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Filter out exceptions and return valid results
@@ -508,6 +514,91 @@ def extract_products(domain: str, output_dir: str = "crawled_data", industry: st
     except Exception as e:
         print(f"[{domain}] Product extraction error: {e}")
         return []
+
+
+def update_vetting_decision(domain: str, new_decision: str):
+    """
+    Update the vetting decision for a domain in local_vet_results.jsonl.
+
+    Args:
+        domain: Domain to update
+        new_decision: New decision ("YES" or "NO")
+    """
+    if not VETTING_CACHE.exists():
+        print(f"[WARNING] Vetting cache not found at {VETTING_CACHE}")
+        return
+
+    # Read all entries
+    entries = []
+    with open(VETTING_CACHE, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                try:
+                    entry = json.loads(line)
+                    if entry.get("domain") == domain:
+                        entry["decision"] = new_decision
+                        entry["ts"] = int(time.time())
+                    entries.append(entry)
+                except:
+                    continue
+
+    # Write back
+    with open(VETTING_CACHE, 'w', encoding='utf-8') as f:
+        for entry in entries:
+            f.write(json.dumps(entry) + "\n")
+
+    print(f"[{domain}] Updated vetting decision to {new_decision}")
+
+
+def delete_crawled_data(domain: str, output_dir: str = "crawled_data"):
+    """
+    Delete all crawled data for a domain.
+
+    Args:
+        domain: Domain to delete data for
+        output_dir: Base directory for crawled data
+    """
+    deleted_files = []
+
+    # Delete domain data file
+    host = domain.replace(':', '_')
+    domain_file = os.path.join(output_dir, "domains", f"{host}.jsonl.gz")
+    if os.path.exists(domain_file):
+        try:
+            os.remove(domain_file)
+            deleted_files.append(domain_file)
+        except Exception as e:
+            print(f"[WARNING] Could not delete {domain_file}: {e}")
+
+    # Delete crawl state file
+    state_file = os.path.join(output_dir, "crawl_state", f"{host}_visited.txt")
+    if os.path.exists(state_file):
+        try:
+            os.remove(state_file)
+            deleted_files.append(state_file)
+        except Exception as e:
+            print(f"[WARNING] Could not delete {state_file}: {e}")
+
+    if deleted_files:
+        print(f"[{domain}] Deleted crawled data: {len(deleted_files)} files")
+
+
+def delete_extracted_data(domain: str, base_dir: str = "extracted_data"):
+    """
+    Delete extracted data for a domain if it exists.
+
+    Args:
+        domain: Domain to delete data for
+        base_dir: Base directory for extracted data
+    """
+    domain_dir = os.path.join(base_dir, "companies", domain)
+    if os.path.exists(domain_dir):
+        try:
+            import shutil
+            shutil.rmtree(domain_dir)
+            print(f"[{domain}] Deleted extracted data directory")
+        except Exception as e:
+            print(f"[WARNING] Could not delete {domain_dir}: {e}")
 
 
 def save_company_data(domain: str, company_profile: Dict, products: List[Dict], base_dir: str = "extracted_data"):

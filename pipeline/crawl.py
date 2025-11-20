@@ -11,6 +11,7 @@ from urllib import robotparser
 
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from tqdm import tqdm
+from pipeline.deduplicate import track_crawled_domain, save_homepage_features, extract_homepage_features
 
 
 SKIP_EXTENSIONS = {
@@ -251,24 +252,36 @@ async def _crawl_one(base_url: str, out_path: str, visited_path: str, hashes_pat
         _save_set(visited_path, visited)
         _save_set(hashes_path, content_hashes)
         
-        # Retry logic
-        if pages_found == 0 and attempt < max_attempts:
-            if pbar:
-                pbar.write(f"[{host}] Zero pages found on attempt {attempt}, retrying...")
-            else:
-                print(f"[{host}] Zero pages found on attempt {attempt}, retrying...")
-            if not queue:
-                queue.append((base_url, 0))
-            await asyncio.sleep(2 + random.random())
-        else:
-            break
-    
     # Write completion marker - domain is fully crawled!
     with open(complete_path, 'w', encoding='utf-8') as f:
         f.write(f"Completed at: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
         f.write(f"Total URLs visited: {len(visited)}\n")
         f.write(f"Unique pages: {len(content_hashes)}\n")
-    
+
+    # Track this domain as crawled for deduplication
+    track_crawled_domain(host)
+
+    # Extract and cache homepage features for future deduplication
+    try:
+        # Find homepage in crawled pages
+        homepage_url = base_url
+        # Read from crawled data to extract homepage
+        with gzip.open(out_path, 'rt', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    page = json.loads(line)
+                    if page.get('depth') == 0:  # Homepage
+                        # Create pseudo-HTML from content for feature extraction
+                        html_content = f"<html><head><title>{page.get('title', '')}</title></head><body>{page.get('content', '')}</body></html>"
+                        features = extract_homepage_features(html_content, host, method="regex")
+                        save_homepage_features(host, features)
+                        break
+                except:
+                    continue
+    except Exception as e:
+        # Not critical if we can't extract features now, will fetch later if needed
+        pass
+
     if pbar:
         pbar.write(f"[{host}] ✓ COMPLETE: {len(visited)} URLs, {len(content_hashes)} unique pages")
         pbar.update(1)  # Mark this domain as complete
@@ -352,5 +365,18 @@ def crawl_domains(domains: List[str], output_dir: str = "crawled_data", max_page
             await queue.put(None)  # Poison pill
         await asyncio.gather(*workers)
 
-    asyncio.run(runner())
+    # Handle both cases: running from async context (Streamlit) or sync context (main.py)
+    try:
+        # Check if there's already a running event loop
+        loop = asyncio.get_running_loop()
+        # If we're here, there's a running loop (e.g., Streamlit)
+        # We need to run in a separate thread with its own event loop
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(asyncio.run, runner())
+            future.result()  # Wait for completion
+    except RuntimeError:
+        # No running loop, safe to use asyncio.run()
+        asyncio.run(runner())
+
     pbar.close()

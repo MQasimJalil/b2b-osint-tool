@@ -8,11 +8,15 @@ from typing import List
 from pipeline.discover import discover_domains
 from pipeline.local_vet import vet_domains_locally
 from pipeline.crawl import crawl_domains, get_crawl_status
+from pipeline.deduplicate import check_before_crawl
 from pipeline.extract import (
     extract_company_profile,
     extract_products,
     save_company_data,
-    build_global_indexes
+    build_global_indexes,
+    update_vetting_decision,
+    delete_crawled_data,
+    delete_extracted_data
 )
 from pipeline.rule_vet import rule_vet
 
@@ -65,29 +69,29 @@ def _load_local_vet_decisions() -> dict:
 
 def run(industry: str, max_discovery: int, max_crawl_pages: int, max_depth: int, skip_discovery: bool, concurrency: int, max_parallel_domains: int):
     # Optionally run discovery, then always load from cache for resumability
-    # if not skip_discovery:
-    #     print(f"[0/4] Discovering domains for: {industry}")
-    #     _ = discover_domains(industry, max_results=max_discovery)
-    # discovered = _load_discovered_domains()
-    # print(f"[1/4] Discovered domains in cache: {len(discovered)}")
+    if not skip_discovery:
+        print(f"[0/4] Discovering domains for: {industry}")
+        _ = discover_domains(industry, max_results=max_discovery)
+    discovered = _load_discovered_domains()
+    print(f"[1/4] Discovered domains in cache: {len(discovered)}")
 
-    # print("[2/4] Rule-based vetting using soft-vet cache and HTML snippets")
-    # existing = _load_local_vet_decisions()
-    # pending = [d for d in discovered if d not in existing]
-    # auto_yes, auto_no, unclear = rule_vet(pending)
-    # # Persist auto decisions immediately for crash-safety
-    # if auto_yes:
-    #     _write_jsonl(os.path.join("pipeline", "cache", "local_vet_results.jsonl"),
-    #                  [{"domain": d, "decision": "YES", "ts": int(time.time())} for d in sorted(list(auto_yes))])
-    # if auto_no:
-    #     _write_jsonl(os.path.join("pipeline", "cache", "local_vet_results.jsonl"),
-    #                  [{"domain": d, "decision": "NO", "ts": int(time.time())} for d in sorted(list(auto_no))])
-    # print(f"  → Auto-YES: {len(auto_yes)} | Auto-NO: {len(auto_no)} | Unclear: {len(unclear)}")
+    print("[2/4] Rule-based vetting using soft-vet cache and HTML snippets")
+    existing = _load_local_vet_decisions()
+    pending = [d for d in discovered if d not in existing]
+    auto_yes, auto_no, unclear = rule_vet(pending)
+    # Persist auto decisions immediately for crash-safety
+    if auto_yes:
+        _write_jsonl(os.path.join("pipeline", "cache", "local_vet_results.jsonl"),
+                     [{"domain": d, "decision": "YES", "ts": int(time.time())} for d in sorted(list(auto_yes))])
+    if auto_no:
+        _write_jsonl(os.path.join("pipeline", "cache", "local_vet_results.jsonl"),
+                     [{"domain": d, "decision": "NO", "ts": int(time.time())} for d in sorted(list(auto_no))])
+    print(f"  → Auto-YES: {len(auto_yes)} | Auto-NO: {len(auto_no)} | Unclear: {len(unclear)}")
 
-    # print("[2.5/4] Local LLM vet only for unclear domains (YES/NO)")
-    # local_results = vet_domains_locally(sorted([d for d in unclear if d not in existing]), model="mistral")
-    # local_yes = {r["domain"] for r in local_results if r.get("decision") == "YES"}
-    # local_no = {r["domain"] for r in local_results if r.get("decision") != "YES"}
+    print("[2.5/4] Local LLM vet only for unclear domains (YES/NO)")
+    local_results = vet_domains_locally(sorted([d for d in unclear if d not in existing]), model="mistral")
+    local_yes = {r["domain"] for r in local_results if r.get("decision") == "YES"}
+    local_no = {r["domain"] for r in local_results if r.get("decision") != "YES"}
 
     # Recompute final sets from file for full resumability
     final_map = _load_local_vet_decisions()
@@ -95,49 +99,94 @@ def run(industry: str, max_discovery: int, max_crawl_pages: int, max_depth: int,
     rejected = sorted([d for d, dec in final_map.items() if dec != "YES"])
     print(f"  → Final YES: {len(yes_domains)} | Final NO: {len(rejected)}")
 
-    # if rejected:
-    #     _write_jsonl("bad_output.jsonl", [{"url": d, "raw": "NO"} for d in rejected])
+    if rejected:
+        _write_jsonl("bad_output.jsonl", [{"url": d, "raw": "NO"} for d in rejected])
 
-    # # Get crawl status before crawling
-    # print("[3/6] Checking crawl status...")
-    # crawl_status = get_crawl_status(yes_domains, output_dir="crawled_data")
-    # fully_done = [d for d, s in crawl_status.items() if s["fully_crawled"]]
-    # in_progress = [d for d, s in crawl_status.items() if s["in_progress"]]
-    # not_started = [d for d in yes_domains if d not in fully_done and d not in in_progress]
     
-    # print(f"  → Total vetted domains: {len(yes_domains)}")
-    # print(f"  → ✓ Fully crawled: {len(fully_done)}")
-    # print(f"  → ⏸ In-progress (will resume): {len(in_progress)}")
-    # print(f"  → ○ Not started: {len(not_started)}")
-    # print(f"  → Total to crawl/resume: {len(in_progress) + len(not_started)}")
-    
-    # to_crawl_count = len(in_progress) + len(not_started)
-    # if to_crawl_count > 0:
-    #     print(f"\n[3.5/6] Crawling {to_crawl_count} sites ({len(not_started)} new, {len(in_progress)} resuming)")
-    #     print(f"  → Parallel domains: {max_parallel_domains} domains at once")
-    #     print(f"  → Page concurrency: {concurrency} pages per domain")
-    #     print(f"  → Total concurrent requests: {max_parallel_domains * concurrency}")
-    #     crawl_domains(yes_domains, output_dir="crawled_data", max_pages=max_crawl_pages, 
-    #                  max_depth=max_depth, skip_crawled=True, concurrency=concurrency,
-    #                  max_parallel_domains=max_parallel_domains)
-    # else:
-    #     print("  → All domains already crawled!")
+    # Deduplicate before crawling
+    print("[3/6] Deduplicating domains...")
+    to_crawl = []
+    duplicates_found = 0
 
-    # print(f"\n[4/6] Extracting company profiles for {len(yes_domains)} domains")
-    # for domain in yes_domains:
-    #     company_profile = extract_company_profile(domain, output_dir="crawled_data")
-    #     if not company_profile:
-    #         print(f"  [SKIP] {domain} - no company profile extracted")
-    #         continue
-        
-    #     print(f"[5/6] Extracting products for {domain} (filtering for: {industry})")
-    #     products = extract_products(domain, output_dir="crawled_data", industry=industry)
-        
-    #     # Save per-domain data
-    #     save_company_data(domain, company_profile, products, base_dir="extracted_data")
+    for domain in yes_domains:
+        dedup_result = check_before_crawl(
+            domain,
+            pattern_threshold=0.20,  # 20% pattern match triggers homepage check
+            duplicate_threshold=0.70,  # 70% total score marks as duplicate
+            extraction_method="regex"  # Use "openai" for better accuracy (~$0.0001/domain)
+        )
+
+        if dedup_result["action"] == "skip":
+            # Mark as duplicate in vetting cache
+            update_vetting_decision(domain, f"DUPLICATE:{dedup_result['primary_domain']}")
+            duplicates_found += 1
+        else:
+            to_crawl.append(domain)
+
+    if duplicates_found > 0:
+        print(f"  → Skipped {duplicates_found} duplicate domains")
+
+    # Get crawl status for unique domains
+    print("[3.1/6] Checking crawl status for unique domains...")
+    crawl_status = get_crawl_status(to_crawl, output_dir="crawled_data")
+    fully_done = [d for d, s in crawl_status.items() if s["fully_crawled"]]
+    in_progress = [d for d, s in crawl_status.items() if s["in_progress"]]
+    not_started = [d for d in to_crawl if d not in fully_done and d not in in_progress]
+
+    print(f"  → Total unique domains: {len(to_crawl)}")
+    print(f"  → ✓ Fully crawled: {len(fully_done)}")
+    print(f"  → ⏸ In-progress (will resume): {len(in_progress)}")
+    print(f"  → ○ Not started: {len(not_started)}")
+    print(f"  → Total to crawl/resume: {len(in_progress) + len(not_started)}")
+
+    to_crawl_count = len(in_progress) + len(not_started)
+    if to_crawl_count > 0:
+        print(f"\n[3.5/6] Crawling {to_crawl_count} sites ({len(not_started)} new, {len(in_progress)} resuming)")
+        print(f"  → Parallel domains: {max_parallel_domains} domains at once")
+        print(f"  → Page concurrency: {concurrency} pages per domain")
+        print(f"  → Total concurrent requests: {max_parallel_domains * concurrency}")
+        crawl_domains(to_crawl, output_dir="crawled_data", max_pages=max_crawl_pages,
+                     max_depth=max_depth, skip_crawled=True, concurrency=concurrency,
+                     max_parallel_domains=max_parallel_domains)
+    else:
+        print("  → All domains already crawled!")
+
+
+    print(f"\n[4/6] Extracting company profiles for {len(yes_domains)} domains")
+    extracted_count = 0
+    for domain in yes_domains:
+        # Check if already extracted to avoid wasting tokens
+        company_file = os.path.join("extracted_data", "companies", domain, "profile.json")
+        if os.path.exists(company_file):
+            print(f"  [SKIP] {domain} - already extracted")
+            continue
+
+        print(f"  -> Extracting {domain}...")
+        company_profile = extract_company_profile(domain, output_dir="crawled_data")
+        if not company_profile:
+            print(f"  [SKIP] {domain} - no company profile extracted")
+            continue
+
+        print(f"[5/6] Extracting products for {domain} (filtering for: {industry})")
+        products = extract_products(domain, output_dir="crawled_data", industry=industry)
+
+        # Check if company has products
+        if len(products) == 0:
+            print(f"  [REJECT] {domain} - no products found, marking as NO and cleaning up")
+            update_vetting_decision(domain, "NO")
+            delete_crawled_data(domain, output_dir="crawled_data")
+            delete_extracted_data(domain, base_dir="extracted_data")
+            continue
+
+        # Save per-domain data
+        save_company_data(domain, company_profile, products, base_dir="extracted_data")
+        extracted_count += 1
     
-    # print("[6/6] Building global indexes")
-    # build_global_indexes(base_dir="extracted_data")
+    if extracted_count > 0:
+        print("[6/6] Building global indexes")
+        build_global_indexes(base_dir="extracted_data")
+    else:
+        print("[6/6] No new extractions - skipping index rebuild")
 
     # Optional: Embed domains for RAG (uncomment to enable)
     print("\n[7/7] Embedding domains for RAG...")
