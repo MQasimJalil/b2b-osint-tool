@@ -105,9 +105,14 @@ def is_valid_email_data(email_data: Dict) -> bool:
 
     return True
 
-def ensure_data_availability(domains: List[str]):
+def ensure_data_availability(domains: List[str], verify_emails: bool = False, enrich_contacts: bool = False):
     """
     Ensure data is crawled, extracted, and embedded for the given domains.
+
+    Args:
+        domains: List of domains to process
+        verify_emails: If True, verify emails after extraction before embedding
+        enrich_contacts: If True, enrich contact information (phone, WhatsApp, LinkedIn)
     """
     print(f"\n[1/3] Checking data availability for {len(domains)} domains...")
     
@@ -150,6 +155,32 @@ def ensure_data_availability(domains: List[str]):
         print("  -> Rebuilding global indexes...")
         build_global_indexes(base_dir="extracted_data")
 
+    # 2.5. Verify emails (optional, before embedding)
+    if verify_emails:
+        print(f"\n[2.5/3] Verifying contact emails...")
+        from verify_emails import verify_company_emails
+        verify_company_emails(
+            check_smtp=True,
+            domains=domains,
+            force=False,
+            dry_run=False,
+            max_workers=5
+        )
+
+    # 2.6. Enrich contacts (optional, before embedding)
+    if enrich_contacts:
+        print(f"\n[2.6/3] Enriching contact information (phone, WhatsApp, LinkedIn)...")
+        from enrich_contacts import enrich_company
+
+        for domain in domains:
+            try:
+                # Use default sources: website and linkedin (moderate speed)
+                # Companies without valid emails will automatically use aggressive mode
+                sources = ['website', 'linkedin']
+                enrich_company(domain, sources=sources, force_mode=None, dry_run=False)
+            except Exception as e:
+                print(f"  [ERROR] Enriching {domain}: {e}")
+
     # 3. Embed (RAG)
     print(f"\n[3/3] Ensuring RAG embeddings...")
     for domain in domains:
@@ -172,12 +203,17 @@ def ensure_data_availability(domains: List[str]):
         except Exception as e:
             print(f"  [ERROR] Embedding {domain}: {e}")
 
-def run_agentic_flow(domains: List[str]):
+def run_agentic_flow(domains: List[str], verify_emails: bool = False, enrich_contacts: bool = False):
     """
     Main flow: Ensure Data -> Run Agent -> Save Drafts
+
+    Args:
+        domains: List of domains to process
+        verify_emails: If True, verify emails before generating drafts
+        enrich_contacts: If True, enrich contact information before generating drafts
     """
     # 1. Prepare Data
-    ensure_data_availability(domains)
+    ensure_data_availability(domains, verify_emails=verify_emails, enrich_contacts=enrich_contacts)
     
     # 2. Run Agent
     print("\n[4/4] Running Gemini Agent...")
@@ -228,8 +264,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Run Agentic Email Flow",
         epilog="Examples:\n"
-               "  python run_agentic_flow.py bravegk.com ab1gk.com     # Process specific domains\n"
-               "  python run_agentic_flow.py --all                      # Process all embedded domains without drafts",
+               "  python run_agentic_flow.py bravegk.com ab1gk.com           # Process specific domains\n"
+               "  python run_agentic_flow.py --all                            # Process all embedded domains without drafts\n"
+               "  python run_agentic_flow.py --all --verify-email             # Process with email verification\n"
+               "  python run_agentic_flow.py --all --enrich-contacts          # Process with contact enrichment\n"
+               "  python run_agentic_flow.py --all --verify-email --enrich-contacts  # Full pipeline with verification and enrichment",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
@@ -241,6 +280,16 @@ if __name__ == "__main__":
         "--all",
         action="store_true",
         help="Process all embedded domains that don't have drafts yet"
+    )
+    parser.add_argument(
+        "--verify-email",
+        action="store_true",
+        help="Verify contact emails before generating drafts (recommended)"
+    )
+    parser.add_argument(
+        "--enrich-contacts",
+        action="store_true",
+        help="Enrich contact information (phone, WhatsApp, LinkedIn) before generating drafts"
     )
     args = parser.parse_args()
 
@@ -267,11 +316,11 @@ if __name__ == "__main__":
         if len(domains_to_process) > 10:
             print(f"  ... and {len(domains_to_process) - 10} more")
 
-        run_agentic_flow(domains_to_process)
+        run_agentic_flow(domains_to_process, verify_emails=args.verify_email, enrich_contacts=args.enrich_contacts)
 
     elif args.domains:
         # Process specific domains provided as arguments
-        run_agentic_flow(args.domains)
+        run_agentic_flow(args.domains, verify_emails=args.verify_email, enrich_contacts=args.enrich_contacts)
 
     else:
         parser.print_help()

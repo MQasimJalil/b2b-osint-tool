@@ -60,6 +60,7 @@ B2B OSINT Tool/
 ├── main.py                      # **Main pipeline orchestrator** (run this!)
 ├── run_agentic_flow.py          # **Email generation workflow** (generate drafts)
 ├── save_drafts_to_gmail.py      # **Save drafts to Gmail** (for manual review/send)
+├── streamlit_app.py             # **Web Interface / GUI** (run the pipeline from a browser)
 ├── email_drafts.jsonl           # Generated email drafts (generated)
 ├── mcp_server.py                # FastAPI HTTP MCP server
 ├── mcp_stdio_server.py          # FastMCP stdio MCP server
@@ -76,6 +77,22 @@ B2B OSINT Tool/
 ---
 
 ## Key Workflows
+
+### **Web Interface / GUI** — `streamlit_app.py` ⭐ NEW
+
+This project includes a comprehensive web-based graphical user interface (GUI) built with Streamlit. The GUI provides a user-friendly way to run the entire pipeline, monitor its progress, query the extracted data, and view analytics.
+
+**To launch the web interface:**
+```powershell
+streamlit run streamlit_app.py
+```
+
+**Features:**
+- **Full Pipeline Control:** Run the entire end-to-end pipeline (Discovery → Vetting → Crawling → Extraction → RAG) from the UI.
+- **Real-Time Monitoring:** View the status and progress of each pipeline stage.
+- **RAG Query Interface:**  Use a chat-like interface to ask natural language questions about the extracted data.
+- **Analytics Dashboard:**  Visualize key metrics and insights from the collected data.
+
 
 ### **Main End-to-End Pipeline** — `main.py` ⭐
 The primary workflow that runs the full discovery → vetting → crawling → extraction pipeline:
@@ -152,6 +169,7 @@ pip install -r requirements.txt
 - `tiktoken` - Token counting for semantic chunking
 - `selenium`, `undetected-chromedriver` - Browser automation
 - `fastapi`, `uvicorn` - HTTP MCP server
+- `streamlit` - Web Interface / GUI
 - `mcp` - Stdio MCP server framework
 
 3) Playwright note (crawl4ai)
@@ -409,6 +427,30 @@ python save_drafts_to_gmail.py
 # 5. Review, edit, and send each email manually
 ```
 
+### **Run the Web Interface / GUI** ⭐
+
+**Run the Streamlit application:**
+```powershell
+streamlit run streamlit_app.py
+```
+
+### **Advanced Usage**
+
+#### **Deep Contact Enrichment (`enrich_contacts.py`)**
+For a more in-depth contact enrichment process, you can use the `enrich_contacts.py` script. This script runs on the data produced by the core pipeline and performs a deeper analysis to find additional contacts.
+
+**To run the contact enrichment script:**
+```powershell
+python enrich_contacts.py --company-name "The One Glove" --domain "theoneglove.com"
+```
+
+**Parameters:**
+- `--company-name` - The name of the company to enrich.
+- `--domain` - The domain of the company to enrich.
+
+### **Note on Legacy Documentation**
+The `docs/` directory contains some legacy documentation that may not reflect the current state of the main pipeline. While it may contain some useful information, please refer to this `README.md` as the primary source of truth.
+
 ### **MCP Server (Model Context Protocol)** ⭐
 
 Expose your ChromaDB market intelligence data to LLM clients like Claude Desktop through an MCP server. Two implementations available:
@@ -594,5 +636,6 @@ For Docker-based MCP integration, see `setup-guide.md` for complete instructions
 - RAG UI: Web interface for natural language queries
 - Product comparison tool: Automated side-by-side product comparisons via RAG
 - Streamlit dashboard for monitoring pipeline progress and data quality
+- Analytics Dashboard: A dashboard to visualize key metrics and insights from the collected data.
 - Enhanced discovery: More search engines, better query templates, regional variations
 - MCP enhancements: Additional filtering options, batch operations, real-time updates

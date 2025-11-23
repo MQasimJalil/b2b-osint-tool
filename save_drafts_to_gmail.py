@@ -67,17 +67,24 @@ def load_email_drafts(drafts_file: str = "email_drafts.jsonl") -> List[Dict]:
     return drafts
 
 
-def get_contact_for_domain(domain: str) -> Optional[Dict]:
+def get_contact_for_domain(domain: str, verify_email: bool = False) -> Optional[Dict]:
     """
     Get primary contact email for a domain from extracted data.
     Tries profile.json first, then falls back to all_companies.jsonl index.
+
+    Args:
+        domain: Company domain
+        verify_email: If True, check email verification status and skip invalid emails
 
     Returns:
         {
             "email": str,
             "name": str (if available),
-            "role": str (if available)
+            "role": str (if available),
+            "email_valid": bool (if verification checked),
+            "email_invalid_reason": str (if email invalid)
         }
+        Returns None if no valid email found
     """
     # Method 1: Try to load from profile.json (per-domain file)
     profile_file = Path("extracted_data") / "companies" / domain / "profile.json"
@@ -89,10 +96,32 @@ def get_contact_for_domain(domain: str) -> Optional[Dict]:
                 # Extract emails from main_contacts
                 main_contacts = profile.get("main_contacts", {}) or {}
                 emails = main_contacts.get("email", [])
+                email_verification = main_contacts.get("email_verification", {})
 
                 if emails:
                     # Define generic prefixes to de-prioritize
                     generic_prefixes = ("info", "sales", "hello", "contact", "support", "admin")
+
+                    # If verify_email is True, filter out invalid emails
+                    if verify_email and email_verification:
+                        valid_emails = [
+                            e for e in emails
+                            if email_verification.get(e, {}).get("is_valid", False)
+                        ]
+
+                        if not valid_emails:
+                            # All emails are invalid
+                            first_email = emails[0] if emails else None
+                            if first_email and first_email in email_verification:
+                                reason = email_verification[first_email].get("reason", "Unknown")
+                                print(f"  [INVALID EMAIL] {domain} - {first_email}: {reason}")
+                                return None
+                            else:
+                                print(f"  [NO VERIFICATION] {domain} - Email not verified yet")
+                                return None
+
+                        # Use valid emails only
+                        emails = valid_emails
 
                     # Separate personal vs generic
                     personal_emails = [e for e in emails if not e.lower().startswith(generic_prefixes)]
@@ -105,11 +134,20 @@ def get_contact_for_domain(domain: str) -> Optional[Dict]:
                         (generic_emails[0] if generic_emails else emails[0])
                     )
 
-                    return {
+                    result = {
                         "email": selected_email,
                         "name": None,
                         "role": None
                     }
+
+                    # Add verification info if available
+                    if verify_email and selected_email in email_verification:
+                        verification_info = email_verification[selected_email]
+                        result["email_valid"] = verification_info.get("is_valid", False)
+                        if not result["email_valid"]:
+                            result["email_invalid_reason"] = verification_info.get("reason", "Unknown")
+
+                    return result
         except Exception as e:
             print(f"  [WARN] Could not load profile for {domain}: {e}")
 
@@ -272,7 +310,8 @@ def save_drafts_to_gmail(
     drafts: List[Dict],
     subject_index: int = 0,
     drafts_file: str = "email_drafts.jsonl",
-    delay_seconds: float = 2.0
+    delay_seconds: float = 2.0,
+    verify_email: bool = False
 ):
     """
     Save email drafts to Gmail as draft messages.
@@ -285,16 +324,21 @@ def save_drafts_to_gmail(
         drafts_file: Path to email drafts JSONL file for timestamp updates
         delay_seconds: Delay in seconds between creating drafts (default: 2.0)
                       Helps prevent Gmail rate limiting
+        verify_email: If True, skip drafts for invalid emails (default: False)
     """
     print(f"\n{'='*60}")
     print(f"SAVE DRAFTS TO GMAIL")
     print(f"{'='*60}")
     print(f"All subject line options will be included in draft body for manual selection")
-    print(f"Delay between drafts: {delay_seconds} seconds (to prevent rate limiting)\n")
+    print(f"Delay between drafts: {delay_seconds} seconds (to prevent rate limiting)")
+    if verify_email:
+        print(f"Email verification: ENABLED (skipping invalid emails)")
+    print()
 
     results = []
     created_count = 0
     skipped_count = 0
+    skipped_invalid_email = 0
     failed_count = 0
 
     for i, draft in enumerate(drafts, 1):
@@ -305,10 +349,14 @@ def save_drafts_to_gmail(
         print(f"\n[{i}/{len(drafts)}] Processing {domain}...")
 
         # Get contact
-        contact = get_contact_for_domain(domain)
+        contact = get_contact_for_domain(domain, verify_email=verify_email)
         if not contact or not contact.get('email'):
-            print(f"[SKIP] {domain} - No contact email found")
-            skipped_count += 1
+            if verify_email:
+                print(f"[SKIP] {domain} - No valid email found")
+                skipped_invalid_email += 1
+            else:
+                print(f"[SKIP] {domain} - No contact email found")
+                skipped_count += 1
             continue
 
         recipient_email = contact['email']
@@ -365,7 +413,9 @@ def save_drafts_to_gmail(
     print(f"COMPLETE")
     print(f"{'='*60}")
     print(f"  ✓ Drafts created: {created_count}")
-    print(f"  ⊘ Skipped: {skipped_count}")
+    print(f"  ⊘ Skipped (no email): {skipped_count}")
+    if verify_email:
+        print(f"  ⊗ Skipped (invalid email): {skipped_invalid_email}")
     print(f"  ✗ Failed: {failed_count}")
     print(f"{'='*60}\n")
 
@@ -401,6 +451,11 @@ def main():
         default=2.0,
         help="Delay in seconds between creating drafts (default: 2.0, to prevent rate limiting)"
     )
+    parser.add_argument(
+        "--verify-email",
+        action="store_true",
+        help="Verify emails before creating drafts (skip invalid emails)"
+    )
 
     args = parser.parse_args()
 
@@ -424,12 +479,18 @@ def main():
 
     print(f"Loaded {len(drafts)} email drafts")
 
+    if args.verify_email:
+        print("\n⚠ Email verification is ENABLED")
+        print("  Drafts will only be created for companies with valid emails")
+        print("  Run 'python verify_emails.py' first to verify all emails\n")
+
     # Save drafts to Gmail
     save_drafts_to_gmail(
         drafts=drafts,
         subject_index=args.subject_index,
         drafts_file=args.drafts_file,
-        delay_seconds=args.delay
+        delay_seconds=args.delay,
+        verify_email=args.verify_email
     )
 
 

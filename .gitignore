@@ -31,7 +31,14 @@ extracted_data/
 rag_data/
 pipeline/cache/
 research/
+docs/
+enrichment_cache/
+.pytest_cache/
 .claude/
+*.jsonl
+schema_recommendation.md
+web_ready.md
+
 
 # OS
 .DS_Store

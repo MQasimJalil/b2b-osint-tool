@@ -99,57 +99,57 @@ def run(industry: str, max_discovery: int, max_crawl_pages: int, max_depth: int,
     rejected = sorted([d for d, dec in final_map.items() if dec != "YES"])
     print(f"  → Final YES: {len(yes_domains)} | Final NO: {len(rejected)}")
 
-    if rejected:
-        _write_jsonl("bad_output.jsonl", [{"url": d, "raw": "NO"} for d in rejected])
+    # if rejected:
+    #     _write_jsonl("bad_output.jsonl", [{"url": d, "raw": "NO"} for d in rejected])
 
     
-    # Deduplicate before crawling
-    print("[3/6] Deduplicating domains...")
-    to_crawl = []
-    duplicates_found = 0
+    # # Deduplicate before crawling
+    # print("[3/6] Deduplicating domains...")
+    # to_crawl = []
+    # duplicates_found = 0
 
-    for domain in yes_domains:
-        dedup_result = check_before_crawl(
-            domain,
-            pattern_threshold=0.20,  # 20% pattern match triggers homepage check
-            duplicate_threshold=0.70,  # 70% total score marks as duplicate
-            extraction_method="regex"  # Use "openai" for better accuracy (~$0.0001/domain)
-        )
+    # for domain in yes_domains:
+    #     dedup_result = check_before_crawl(
+    #         domain,
+    #         pattern_threshold=0.20,  # 20% pattern match triggers homepage check
+    #         duplicate_threshold=0.70,  # 70% total score marks as duplicate
+    #         extraction_method="regex"  # Use "openai" for better accuracy (~$0.0001/domain)
+    #     )
 
-        if dedup_result["action"] == "skip":
-            # Mark as duplicate in vetting cache
-            update_vetting_decision(domain, f"DUPLICATE:{dedup_result['primary_domain']}")
-            duplicates_found += 1
-        else:
-            to_crawl.append(domain)
+    #     if dedup_result["action"] == "skip":
+    #         # Mark as duplicate in vetting cache
+    #         update_vetting_decision(domain, f"DUPLICATE:{dedup_result['primary_domain']}")
+    #         duplicates_found += 1
+    #     else:
+    #         to_crawl.append(domain)
 
-    if duplicates_found > 0:
-        print(f"  → Skipped {duplicates_found} duplicate domains")
+    # if duplicates_found > 0:
+    #     print(f"  → Skipped {duplicates_found} duplicate domains")
 
-    # Get crawl status for unique domains
-    print("[3.1/6] Checking crawl status for unique domains...")
-    crawl_status = get_crawl_status(to_crawl, output_dir="crawled_data")
-    fully_done = [d for d, s in crawl_status.items() if s["fully_crawled"]]
-    in_progress = [d for d, s in crawl_status.items() if s["in_progress"]]
-    not_started = [d for d in to_crawl if d not in fully_done and d not in in_progress]
+    # # Get crawl status for unique domains
+    # print("[3.1/6] Checking crawl status for unique domains...")
+    # crawl_status = get_crawl_status(to_crawl, output_dir="crawled_data")
+    # fully_done = [d for d, s in crawl_status.items() if s["fully_crawled"]]
+    # in_progress = [d for d, s in crawl_status.items() if s["in_progress"]]
+    # not_started = [d for d in to_crawl if d not in fully_done and d not in in_progress]
 
-    print(f"  → Total unique domains: {len(to_crawl)}")
-    print(f"  → ✓ Fully crawled: {len(fully_done)}")
-    print(f"  → ⏸ In-progress (will resume): {len(in_progress)}")
-    print(f"  → ○ Not started: {len(not_started)}")
-    print(f"  → Total to crawl/resume: {len(in_progress) + len(not_started)}")
+    # print(f"  → Total unique domains: {len(to_crawl)}")
+    # print(f"  → ✓ Fully crawled: {len(fully_done)}")
+    # print(f"  → ⏸ In-progress (will resume): {len(in_progress)}")
+    # print(f"  → ○ Not started: {len(not_started)}")
+    # print(f"  → Total to crawl/resume: {len(in_progress) + len(not_started)}")
 
-    to_crawl_count = len(in_progress) + len(not_started)
-    if to_crawl_count > 0:
-        print(f"\n[3.5/6] Crawling {to_crawl_count} sites ({len(not_started)} new, {len(in_progress)} resuming)")
-        print(f"  → Parallel domains: {max_parallel_domains} domains at once")
-        print(f"  → Page concurrency: {concurrency} pages per domain")
-        print(f"  → Total concurrent requests: {max_parallel_domains * concurrency}")
-        crawl_domains(to_crawl, output_dir="crawled_data", max_pages=max_crawl_pages,
-                     max_depth=max_depth, skip_crawled=True, concurrency=concurrency,
-                     max_parallel_domains=max_parallel_domains)
-    else:
-        print("  → All domains already crawled!")
+    # to_crawl_count = len(in_progress) + len(not_started)
+    # if to_crawl_count > 0:
+    #     print(f"\n[3.5/6] Crawling {to_crawl_count} sites ({len(not_started)} new, {len(in_progress)} resuming)")
+    #     print(f"  → Parallel domains: {max_parallel_domains} domains at once")
+    #     print(f"  → Page concurrency: {concurrency} pages per domain")
+    #     print(f"  → Total concurrent requests: {max_parallel_domains * concurrency}")
+    #     crawl_domains(to_crawl, output_dir="crawled_data", max_pages=max_crawl_pages,
+    #                  max_depth=max_depth, skip_crawled=True, concurrency=concurrency,
+    #                  max_parallel_domains=max_parallel_domains)
+    # else:
+    #     print("  → All domains already crawled!")
 
 
     print(f"\n[4/6] Extracting company profiles for {len(yes_domains)} domains")

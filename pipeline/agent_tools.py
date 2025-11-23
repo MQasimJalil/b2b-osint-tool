@@ -266,7 +266,7 @@ def get_domains() -> Dict[str, List[str]]:
     return {"domains": domains}
 
 
-def get_contacts() -> Dict[str, List[Dict]]:
+def get_contacts(domain: str) -> Dict[str, List[Dict]]:
     """
     Return structured contacts and related profile fields per domain.
 
@@ -279,13 +279,10 @@ def get_contacts() -> Dict[str, List[Dict]]:
         return {"contacts": contacts}
 
     try:
-        for domain_dir in EXTRACTED_DIR.iterdir():
-            if not domain_dir.is_dir():
-                continue
-
+        if domain:
             profile_path = domain_dir / "profile.json"
             if not profile_path.exists():
-                continue
+                return "NO Contact info available"
 
             try:
                 with profile_path.open("r", encoding="utf-8") as f:
@@ -300,7 +297,30 @@ def get_contacts() -> Dict[str, List[Dict]]:
                 }
                 contacts.append(entry)
             except Exception:
-                continue
+                return "[ERROR] Failed to load contact"
+        else:
+            for domain_dir in EXTRACTED_DIR.iterdir():
+                if not domain_dir.is_dir():
+                    continue
+
+                profile_path = domain_dir / "profile.json"
+                if not profile_path.exists():
+                    continue
+
+                try:
+                    with profile_path.open("r", encoding="utf-8") as f:
+                        profile = json.load(f)
+
+                    entry = {
+                        "domain": domain_dir.name,
+                        "company": profile.get("company"),
+                        "main_contacts": profile.get("main_contacts") or {},
+                        "social": profile.get("social") or {},
+                        "management": profile.get("management") or [],
+                    }
+                    contacts.append(entry)
+                except Exception:
+                    continue
     except Exception:
         pass
 
