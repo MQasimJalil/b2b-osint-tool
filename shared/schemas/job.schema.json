@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Job",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "job_type": {
+      "type": "string",
+      "enum": ["discovery", "crawling", "extraction", "enrichment", "email_generation"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["queued", "running", "completed", "failed", "cancelled"]
+    },
+    "progress": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "config": {
+      "type": "object"
+    },
+    "result": {
+      "type": "object"
+    },
+    "error": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "celery_task_id": {
+      "type": "string"
+    }
+  },
+  "required": ["id", "job_type", "status", "progress", "config", "created_at", "user_id"]
+}

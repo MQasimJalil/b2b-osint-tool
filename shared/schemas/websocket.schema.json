@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WebSocketMessage",
+  "type": "object",
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": [
+        "job_started",
+        "job_progress",
+        "job_completed",
+        "job_failed",
+        "company_updated",
+        "company_locked",
+        "company_unlocked",
+        "notification",
+        "user_activity",
+        "campaign_updated",
+        "email_draft_updated"
+      ]
+    },
+    "data": {
+      "type": "object"
+    },
+    "user_id": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": ["event", "data", "timestamp"]
+}

@@ -1,0 +1,75 @@
+# FastAPI and Web Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.6
+python-multipart>=0.0.6
+
+# Database - MongoDB (using Motor for async support)
+motor>=3.3.2  # Async MongoDB driver
+pymongo>=4.6.1  # MongoDB driver
+beanie>=1.24.0  # ODM for MongoDB with Pydantic support
+
+# Database - SQLAlchemy (kept for flexibility, can use PostgreSQL or SQLite as alternative)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9  # PostgreSQL adapter
+alembic>=1.13.0  # Database migrations
+
+# Authentication & Security
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+python-dotenv>=1.0.0
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+email-validator>=2.1.0
+
+# Celery for background tasks
+celery>=5.3.4
+redis>=5.0.1
+
+# API clients and web scraping
+httpx>=0.27.2
+requests>=2.31.0
+requests-html>=0.10.0
+beautifulsoup4>=4.12.3
+selenium>=4.25.0
+undetected-chromedriver>=3.5.5
+playwright>=1.47.0
+crawl4ai>=0.3.14
+
+# Search and discovery
+duckduckgo-search>=6.2.10
+googlesearch-python>=1.2.3
+tldextract>=5.1.2
+
+# Data processing
+pandas>=2.2.2
+numpy>2.0.0
+PyYAML>=6.0.2
+
+# AI/LLM APIs
+openai>=1.51.0
+anthropic>=0.25.0
+google-generativeai>=0.5.0
+
+# Google APIs
+google-api-python-client>=2.150.0
+google-auth-httplib2>=0.2.0
+google-auth-oauthlib>=1.2.1
+
+# Email verification
+dnspython>=2.4.0
+
+# Vector database for RAG
+chromadb>=0.4.24
+tiktoken>=0.7.0
+
+# Utilities
+tqdm>=4.66.5
+python-dateutil>=2.8.2
+
+# Monitoring and logging (optional)
+# sentry-sdk>=1.40.0
+
+# Development dependencies (move to requirements-dev.txt if preferred)
+pytest>=7.4.3
+pytest-asyncio>=0.21.1
+pytest-cov>=4.1.0

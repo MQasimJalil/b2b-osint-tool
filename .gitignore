@@ -1,68 +1,43 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-ENV/
-build/
-dist/
-*.egg-info/
-
-send_emails.py
-
 # Environment variables
 .env
-.env.local
-*.env
+.claude/
 nul
 
-# IDE
+# Data files
+*.db
+b2b_osint.db
+celerybeat-schedule
+credentials.json
+token.json
+logs.txt
+temp_logs.txt
+*.png
+node_modules
+docs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+.Python/
+venv/
+
+# Node.js / Frontend
+node_modules/
+frontend/node_modules/
+dist/
+
+# IDE-related
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Data directories
-crawled_data/
-extracted_data/
-rag_data/
-pipeline/cache/
-research/
-docs/
-enrichment_cache/
-.pytest_cache/
-.claude/
-*.jsonl
-schema_recommendation.md
-web_ready.md
-
-
-# OS
+# Operating System files
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
+run_migration.bat
+run_migration.sh
 
-#analysis and usage files
-Analysis.md
-RAG_USAGE.md
-RAG_IMPLEMENTATION_SUMMARY.md
-SECURITY_SETUP.md
-market_reservations.md
-Analysis_gemini.md
-CLAUDE_DESKTOP_SETUP.md
-setup-guide.md
-founder_response.md
-improvement.md
-credentials.json
-token.json
-email_playbook.md
-email_drafts.jsonl
-DESKTOP_APP_PLAN.md
-DEDUPLICATION.md
-
-
+test_all_services.py
+test_mongodb.py
