@@ -1,4 +1,4 @@
-# B2B OSINT Tool v2.0 - Web-Ready SaaS Application
+# B2B OSINT Tool v2.0 - Web-Ready Application
 
 A comprehensive B2B intelligence platform for discovering, analyzing, and enriching company data at scale. Now restructured as a production-ready SaaS application with FastAPI backend, modern frontend, and scalable architecture.
 
