@@ -62,9 +62,9 @@ A comprehensive B2B intelligence platform for discovering, analyzing, and enrich
 
 **Infrastructure:**
 - Docker & Docker Compose
-- GitHub Actions (CI/CD)
-- AWS/GCP (Cloud deployment)
-- Nginx (Reverse proxy)
+- [PENDING] GitHub Actions (CI/CD)
+- [PENDING] AWS/GCP (Cloud deployment)
+- [PENDING] Nginx (Reverse proxy)
 
 ## 📁 Project Structure
 
