@@ -115,11 +115,6 @@ b2b_osint_tool/
 │   ├── run_celery_worker.sh      # Start Celery worker
 │   └── run_celery_beat.sh        # Start Celery beat
 │
-├── .github/workflows/            # CI/CD pipelines
-│   ├── backend_ci.yml            # Backend tests
-│   ├── frontend_ci.yml           # Frontend tests
-│   └── deploy.yml                # Deployment
-│
 ├── docker-compose.yml            # Local development setup
 ├── .env.example                  # Environment variables template
 └── README.md                     # This file
